@@ -253,7 +253,7 @@ legs_tof_lb[1] = 1 * constants.JULIAN_DAY
 legs_tof_ub[1] = 800 * constants.JULIAN_DAY
 # Jupiter fly-by
 legs_tof_lb[2] = 600 * constants.JULIAN_DAY
-legs_tof_ub[2] = 1500 * constants.JULIAN_DAY
+legs_tof_ub[2] = 1800 * constants.JULIAN_DAY
 # Neptune fly-by
 legs_tof_lb[3] = 4000 * constants.JULIAN_DAY
 legs_tof_ub[3] = 5000 * constants.JULIAN_DAY

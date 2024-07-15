@@ -284,7 +284,7 @@ legs_tof_lb[3] = 600 * constants.JULIAN_DAY
 legs_tof_ub[3] = 1800 * constants.JULIAN_DAY
 # Neptune fly-by
 legs_tof_lb[4] = 3000 * constants.JULIAN_DAY
-legs_tof_ub[4] = 4000 * constants.JULIAN_DAY
+legs_tof_ub[4] = 6000 * constants.JULIAN_DAY
 
 # To setup the optimization, it is first necessary to initialize the optimization problem. This problem, defined through the class `TransferTrajectoryProblem`, is given to PyGMO trough the `pg.problem()` method.
 # 
