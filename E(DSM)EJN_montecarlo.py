@@ -40,6 +40,7 @@ from tudatpy.astro.time_conversion import DateTime, julian_day_to_calendar_date
 
 # Pygmo imports
 import pygmo as pg
+import pickle
 
 ## Helpers
 """
@@ -61,7 +62,11 @@ def convert_trajectory_parameters (transfer_trajectory_object: tudatpy.kernel.tr
 
     # Extract from trajectory parameters the lists with each type of parameters
     departure_time = trajectory_parameters[0]
-    times_of_flight_per_leg = trajectory_parameters[1:]
+    times_of_flight_per_leg = trajectory_parameters[1:4]
+    dsm_leg_fraction = trajectory_parameters[4]
+    v_inf = trajectory_parameters[5]
+    v_inf_in_plane_angle = trajectory_parameters[6]
+    v_inf_out_of_plane_angle = trajectory_parameters[7]
 
     # Get node times
     # Node time for the intial node: departure time
@@ -73,10 +78,12 @@ def convert_trajectory_parameters (transfer_trajectory_object: tudatpy.kernel.tr
         node_times.append(accumulated_time)
 
     # Get leg free parameters and node free parameters: one empty list per leg
-    for i in range(transfer_trajectory_object.number_of_legs):
+    leg_free_parameters.append(np.array([dsm_leg_fraction]))
+    for i in range(transfer_trajectory_object.number_of_legs-1):
         leg_free_parameters.append( [ ] )
     # One empty array for each node
-    for i in range(transfer_trajectory_object.number_of_nodes):
+    node_free_parameters.append(np.array([v_inf, v_inf_in_plane_angle, v_inf_out_of_plane_angle]))
+    for i in range(transfer_trajectory_object.number_of_nodes-1):
         node_free_parameters.append( [ ] )
 
     return node_times, leg_free_parameters, node_free_parameters
@@ -104,7 +111,11 @@ class TransferTrajectoryProblem:
                  departure_date_lb: float, # Lower bound on departure date
                  departure_date_ub: float, # Upper bound on departure date
                  legs_tof_lb: np.ndarray, # Lower bounds of each leg's time of flight
-                 legs_tof_ub: np.ndarray): # Upper bounds of each leg's time of flight
+                 legs_tof_ub: np.ndarray,
+                 dsm_leg_fraction_lb: float,
+                 dsm_leg_fraction_ub: float,
+                 v_inf_lb = np.ndarray,
+                 v_inf_ub = np.ndarray): # Upper bounds of each leg's time of flight
         """
         Class constructor.
         """
@@ -113,6 +124,10 @@ class TransferTrajectoryProblem:
         self.departure_date_ub = departure_date_ub
         self.legs_tof_lb = legs_tof_lb
         self.legs_tof_ub = legs_tof_ub
+        self.dsm_leg_fraction_lb = dsm_leg_fraction_lb
+        self.dsm_leg_fraction_ub = dsm_leg_fraction_ub
+        self.v_inf_lb = v_inf_lb
+        self.v_inf_ub = v_inf_ub
 
         # Save the transfer trajectory object as a lambda function
         # PyGMO internally pickles its user defined objects and some objects cannot be pickled properly without using lambda functions.
@@ -141,6 +156,18 @@ class TransferTrajectoryProblem:
             lower_bound[i+1] = self.legs_tof_lb[i]
             upper_bound[i+1] = self.legs_tof_ub[i]
 
+        lower_bound[4] = self.dsm_leg_fraction_lb
+        upper_bound[4] = self.dsm_leg_fraction_ub
+
+        lower_bound[5] = self.v_inf_lb[0]
+        upper_bound[5] = self.v_inf_ub[0]
+
+        lower_bound[6] = self.v_inf_lb[1]
+        upper_bound[6] = self.v_inf_ub[1]
+
+        lower_bound[7] = self.v_inf_lb[2]
+        upper_bound[7] = self.v_inf_ub[2]
+
         bounds = (lower_bound, upper_bound)
         return bounds
 
@@ -153,7 +180,7 @@ class TransferTrajectoryProblem:
         transfer_trajectory_obj = self.transfer_trajectory_function()
 
         # Get number of parameters: it's the number of nodes (time at the first node, and time of flight to reach each subsequent node)
-        number_of_parameters = transfer_trajectory_obj.number_of_nodes
+        number_of_parameters = transfer_trajectory_obj.number_of_nodes + 4
 
         return number_of_parameters
 
@@ -197,7 +224,7 @@ Before running the optimisation, it is first necessary to setup the simulation. 
 central_body = "Sun"
 
 # Define order of bodies (nodes)
-transfer_body_order = ["Earth", 'Mars', 'Earth', 'Jupiter',"Neptune"]
+transfer_body_order = ["Earth", 'Earth', 'Jupiter', 'Neptune']
 
 # Define departure orbit
 departure_semi_major_axis = np.inf
@@ -205,7 +232,7 @@ departure_eccentricity = 0
 
 # Define insertion orbit
 arrival_altitude_of_periapsis = 1e6 # 1000 km
-arrival_eccentricity = 0.98
+arrival_eccentricity = 0.95
 body_radius = 24764e3
 arrival_radius_of_periapsis = body_radius + arrival_altitude_of_periapsis
 arrival_semi_major_axis = arrival_radius_of_periapsis/arrival_eccentricity
@@ -214,11 +241,27 @@ arrival_semi_major_axis = arrival_radius_of_periapsis/arrival_eccentricity
 # Create simplified system of bodies
 bodies = environment_setup.create_simplified_system_of_bodies()
 
-# Define the trajectory settings for both the legs and at the nodes
-transfer_leg_settings, transfer_node_settings = transfer_trajectory.mga_settings_unpowered_unperturbed_legs(
-    transfer_body_order,
-    departure_orbit=(departure_semi_major_axis, departure_eccentricity),
-    arrival_orbit=(arrival_semi_major_axis, arrival_eccentricity))
+# Manually create the legs settings
+
+# First create an empty list and then append to that the settings of each transfer leg
+transfer_leg_settings = [transfer_trajectory.dsm_velocity_based_leg()]
+for i in range(len(transfer_body_order) - 2):
+    transfer_leg_settings.append( transfer_trajectory.unpowered_leg() )
+
+# Manually create the nodes settings
+
+# First create an empty list and then append to that the settings of each transfer node
+transfer_node_settings = []
+
+# Initial node: departure_node
+transfer_node_settings.append( transfer_trajectory.departure_node(departure_semi_major_axis, departure_eccentricity) )
+
+# Intermediate nodes: swingby_node
+transfer_node_settings.append( transfer_trajectory.swingby_node(6678000.0) )
+transfer_node_settings.append( transfer_trajectory.swingby_node(600000000.0) )
+
+# Final node: capture_node
+transfer_node_settings.append( transfer_trajectory.capture_node(arrival_semi_major_axis, arrival_eccentricity) )
 
 # Create the transfer calculation object
 transfer_trajectory_object = transfer_trajectory.create_transfer_trajectory(
@@ -228,13 +271,9 @@ transfer_trajectory_object = transfer_trajectory.create_transfer_trajectory(
     transfer_body_order,
     central_body)
 
-## Optimization
-"""
-"""
-
-### Optimization Setup 
-"""
-"""
+# Print transfer parameter definitions
+print("Transfer parameter definitions:")
+transfer_trajectory.print_parameter_definitions(transfer_leg_settings, transfer_node_settings)
 
 # Before executing the optimization, it is necessary to select the bounds for the optimized parameters (departure date and time of flight per transfer leg). These are selected according to the values in the Cassini 1 problem statement [(Vinkó et al, 2007)](https://www.esa.int/gsp/ACT/doc/MAD/pub/ACT-RPR-MAD-2007-BenchmarkingDifferentGlobalOptimisationTechniques.pdf).
 
@@ -245,18 +284,21 @@ departure_date_ub = DateTime(2055,  1,  1).epoch()
 # List of lower and upper on time of flight for each leg
 legs_tof_lb = np.zeros(5)
 legs_tof_ub = np.zeros(5)
-# Venus first fly-by
-legs_tof_lb[0] = 1 * constants.JULIAN_DAY
-legs_tof_ub[0] = 800 * constants.JULIAN_DAY
-# Earth fly-by
-legs_tof_lb[1] = 1 * constants.JULIAN_DAY
-legs_tof_ub[1] = 800 * constants.JULIAN_DAY
+# Earth first fly-by
+legs_tof_lb[0] = 500 * constants.JULIAN_DAY
+legs_tof_ub[0] = 1000 * constants.JULIAN_DAY
 # Jupiter fly-by
-legs_tof_lb[2] = 600 * constants.JULIAN_DAY
-legs_tof_ub[2] = 1500 * constants.JULIAN_DAY
+legs_tof_lb[1] = 600 * constants.JULIAN_DAY
+legs_tof_ub[1] = 1300 * constants.JULIAN_DAY
 # Neptune fly-by
-legs_tof_lb[3] = 4000 * constants.JULIAN_DAY
-legs_tof_ub[3] = 5000 * constants.JULIAN_DAY
+legs_tof_lb[2] = 3000 * constants.JULIAN_DAY
+legs_tof_ub[2] = 5000 * constants.JULIAN_DAY
+
+dsm_leg_fraction_lb = 0.4
+dsm_leg_fraction_ub = 0.6
+
+v_inf_lb = [5000, 0, 0]
+v_inf_ub = [5500, 0.15, np.pi]
 
 # To setup the optimization, it is first necessary to initialize the optimization problem. This problem, defined through the class `TransferTrajectoryProblem`, is given to PyGMO trough the `pg.problem()` method.
 # 
@@ -268,17 +310,6 @@ legs_tof_ub[3] = 5000 * constants.JULIAN_DAY
 # Setup optimization
 ###########################################################################
 # Initialize optimization class
-optimizer = TransferTrajectoryProblem(transfer_trajectory_object,
-                                        departure_date_lb,
-                                        departure_date_ub,
-                                        legs_tof_lb,
-                                        legs_tof_ub)
-
-# Creation of the pygmo problem object
-prob = pg.problem(optimizer)
-
-# To print the problem's information: uncomment the next line
-# print(prob)
 
 # Define number of generations per evolution
 number_of_generations = 1
@@ -286,130 +317,71 @@ number_of_generations = 1
 # Fix seed
 optimization_seed = 4444
 
-# Create pygmo algorithm object
-algo = pg.algorithm(pg.de(gen=number_of_generations, seed=optimization_seed, F=0.5))
-
-# To print the algorithm's information: uncomment the next line
-# print(algo)
-
-# Set population size
-population_size = 200
-
-# Create population
-pop = pg.population(prob, size=population_size, seed=optimization_seed)
-
-### Run Optimization 
-"""
-Finally, the optimization can be executed by successively evolving the defined population.
-
-A total number of evolutions of 800 is selected. Thus, the method `algo.evolve()` is called 800 times inside a loop. After each evolution, the best fitness and the list with the best design variables are saved.
-"""
-
-###########################################################################
-# Run optimization
-###########################################################################
-
 # Set number of evolutions
-number_of_evolutions = 800
+number_of_evolutions = 400
 
-# Initialize empty containers
-individuals_list = []
-fitness_list = []
+objective_list = list()
+best_decision_variables = list()
 
-for i in range(number_of_evolutions):
+for tof_Jup_Nep in np.linspace(3000*constants.JULIAN_DAY, 6000*constants.JULIAN_DAY, 300):
 
-    pop = algo.evolve(pop)
+    legs_tof_ub[2] = tof_Jup_Nep
 
-    # individuals save
-    individuals_list.append(pop.champion_x)
-    fitness_list.append(pop.champion_f)
+    optimizer = TransferTrajectoryProblem(transfer_trajectory_object,
+                                            departure_date_lb,
+                                            departure_date_ub,
+                                            legs_tof_lb,
+                                            legs_tof_ub,
+                                            dsm_leg_fraction_lb,
+                                            dsm_leg_fraction_ub,
+                                            v_inf_lb,
+                                            v_inf_ub)
 
-print('The optimization has finished')
+    # Creation of the pygmo problem object
+    prob = pg.problem(optimizer)
 
-## Results Analysis
-"""
-Having finished the optimisation, it is now possible to analyse the results.
+    
 
-According to [Vinkó et al (2007)](https://www.esa.int/gsp/ACT/doc/MAD/pub/ACT-RPR-MAD-2007-BenchmarkingDifferentGlobalOptimisationTechniques.pdf), the best known solution for the Cassini 1 problem has a final objective function value of 4.93 km/s.
+    # Create pygmo algorithm object
+    algo = pg.algorithm(pg.de(gen=number_of_generations, seed=optimization_seed, F=0.5))
 
-The executed optimization process results in a final objective function value of 4933.17 m/s, with a slightly different decision vector from the one presented by Vinkó et al. (2017). This marginal difference can be explained by an inperfect convergence of the used optimizer, which is expected, considering that DE is a global optimizer. 
+    # Set population size
+    population_size = 200
 
-The evolution of the minimum $\Delta V$ throughout the optimization process can be plotted.
-"""
+    # Create population
+    pop = pg.population(prob, size=population_size, seed=optimization_seed)
 
-###########################################################################
-# Results post-processing
-###########################################################################
+    ### Run Optimization 
+    """
+    Finally, the optimization can be executed by successively evolving the defined population.
 
-# Extract the best individual
-print('\n########### CHAMPION INDIVIDUAL ###########\n')
-print('Total Delta V [m/s]: ', pop.champion_f[0])
-best_decision_variables = pop.champion_x/constants.JULIAN_DAY
-print('Departure time w.r.t J2000 [years]: ', best_decision_variables[0]/365)
-print("Departure date:")
-print(julian_day_to_calendar_date(constants.JULIAN_DAY_ON_J2000+best_decision_variables[0]))
-print('Earth-Mars time of flight [years]: ', best_decision_variables[1]/365)
-print("Mars fly-by date:")
-print(julian_day_to_calendar_date(constants.JULIAN_DAY_ON_J2000+sum(best_decision_variables[0:2])))
-print('Mars-Earth time of flight [years]: ', best_decision_variables[2]/365)
-print("Earth fly-by date:")
-print(julian_day_to_calendar_date(constants.JULIAN_DAY_ON_J2000+sum(best_decision_variables[0:3])))
-print('Earth-Jupiter time of flight [years]: ', best_decision_variables[3]/365)
-print("Jupiter fly-by date:")
-print(julian_day_to_calendar_date(constants.JULIAN_DAY_ON_J2000+sum(best_decision_variables[0:4])))
-print('Jupiter-Neptune time of flight [years]: ', best_decision_variables[4]/365)
-print("Neptune arrival date:")
-print(julian_day_to_calendar_date(constants.JULIAN_DAY_ON_J2000+sum(best_decision_variables[0:5])))
-print("\nTotal time of flight [years]: ", sum(best_decision_variables[1:])/365)
+    A total number of evolutions of 800 is selected. Thus, the method `algo.evolve()` is called 800 times inside a loop. After each evolution, the best fitness and the list with the best design variables are saved.
+    """
 
-# Plot fitness over generations
-fig, ax = plt.subplots(figsize=(8, 4))
-ax.plot(np.arange(0, number_of_evolutions), np.float_(fitness_list) / 1000, label='Function value: Feval')
-# Plot champion
-champion_n = np.argmin(np.array(fitness_list))
-ax.scatter(champion_n, np.min(fitness_list) / 1000, marker='x', color='r', label='All-time champion', zorder=10)
+    ###########################################################################
+    # Run optimization
+    ###########################################################################
 
-# Prettify
-ax.set_xlim((0, number_of_evolutions))
-ax.set_ylim([4, 25])
-ax.grid('major')
-ax.set_title('Best individual over generations', fontweight='bold')
-ax.set_xlabel('Number of generation')
-ax.set_ylabel(r'$\Delta V [km/s]$')
-ax.legend(loc='upper right')
-plt.tight_layout()
-plt.legend()
+    # Initialize empty containers
+    individuals_list = []
+    fitness_list = []
 
+    for i in range(number_of_evolutions):
 
-### Plot the transfer
-"""
-Finally, the position history throughout the transfer can be retrieved from the transfer trajectory object and plotted.
-"""
+        pop = algo.evolve(pop)
 
-# Reevaluate the transfer trajectory using the champion design variables
-node_times, leg_free_parameters, node_free_parameters = convert_trajectory_parameters(transfer_trajectory_object, pop.champion_x)
-transfer_trajectory_object.evaluate(node_times, leg_free_parameters, node_free_parameters)
+        # individuals save
+        individuals_list.append(pop.champion_x)
+        fitness_list.append(pop.champion_f)
 
-# Extract the state history
-state_history = transfer_trajectory_object.states_along_trajectory(500)
-fly_by_states = np.array([state_history[node_times[i]] for i in range(len(node_times))])
-state_history = result2array(state_history)
-au = 1.5e11
+    print('The optimization has finished')
 
-print(transfer_trajectory_object.delta_v_per_node)
-print(transfer_trajectory_object.delta_v_per_leg)
+    ###########################################################################
+    # Results post-processing
+    ###########################################################################
 
-# Plot the state history
-fig = plt.figure(figsize=(8,5))
-ax = fig.add_subplot(111)
-ax.plot(state_history[:, 1] / au, state_history[:, 2] / au)
-ax.scatter(fly_by_states[0, 0] / au, fly_by_states[0, 1] / au, color='blue', label='Earth departure')
-ax.scatter(fly_by_states[1, 0] / au, fly_by_states[1, 1] / au, color='green', label='Mars fly-by')
-ax.scatter(fly_by_states[2, 0] / au, fly_by_states[2, 1] / au, color='green',label='Earth fly-by')
-ax.scatter(fly_by_states[4, 0] / au, fly_by_states[4, 1] / au, color='red', label='Jupiter fly-by')
-ax.scatter([0], [0], color='orange', label='Sun')
-ax.set_xlabel('x wrt Sun [AU]')
-ax.set_ylabel('y wrt Sun [AU]')
-ax.set_aspect('equal')
-ax.legend(bbox_to_anchor=[1, 1])
-plt.show()
+    objective_list.append(pop.champion_f[0])
+    best_decision_variables.append(pop.champion_x)
+
+pickle.dump((objective_list, best_decision_variables), open('E(DSM)EJN_montecarlo_results.pkl', 'wb'))
+

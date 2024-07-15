@@ -197,7 +197,7 @@ Before running the optimisation, it is first necessary to setup the simulation. 
 central_body = "Sun"
 
 # Define order of bodies (nodes)
-transfer_body_order = ["Earth", 'Mars', 'Earth', 'Jupiter',"Neptune"]
+transfer_body_order = ["Earth", 'Mars', 'Earth', "Earth", 'Jupiter',"Neptune"]
 
 # Define departure orbit
 departure_semi_major_axis = np.inf
@@ -245,18 +245,21 @@ departure_date_ub = DateTime(2055,  1,  1).epoch()
 # List of lower and upper on time of flight for each leg
 legs_tof_lb = np.zeros(5)
 legs_tof_ub = np.zeros(5)
-# Venus first fly-by
+# Mars first fly-by
 legs_tof_lb[0] = 1 * constants.JULIAN_DAY
 legs_tof_ub[0] = 800 * constants.JULIAN_DAY
 # Earth fly-by
 legs_tof_lb[1] = 1 * constants.JULIAN_DAY
 legs_tof_ub[1] = 800 * constants.JULIAN_DAY
+# Earth fly-by
+legs_tof_lb[2] = 1 * constants.JULIAN_DAY
+legs_tof_ub[2] = 800 * constants.JULIAN_DAY
 # Jupiter fly-by
-legs_tof_lb[2] = 600 * constants.JULIAN_DAY
-legs_tof_ub[2] = 1500 * constants.JULIAN_DAY
+legs_tof_lb[3] = 600 * constants.JULIAN_DAY
+legs_tof_ub[3] = 1500 * constants.JULIAN_DAY
 # Neptune fly-by
-legs_tof_lb[3] = 4000 * constants.JULIAN_DAY
-legs_tof_ub[3] = 5000 * constants.JULIAN_DAY
+legs_tof_lb[4] = 4000 * constants.JULIAN_DAY
+legs_tof_ub[4] = 6000 * constants.JULIAN_DAY
 
 # To setup the optimization, it is first necessary to initialize the optimization problem. This problem, defined through the class `TransferTrajectoryProblem`, is given to PyGMO trough the `pg.problem()` method.
 # 
@@ -354,12 +357,15 @@ print(julian_day_to_calendar_date(constants.JULIAN_DAY_ON_J2000+sum(best_decisio
 print('Mars-Earth time of flight [years]: ', best_decision_variables[2]/365)
 print("Earth fly-by date:")
 print(julian_day_to_calendar_date(constants.JULIAN_DAY_ON_J2000+sum(best_decision_variables[0:3])))
-print('Earth-Jupiter time of flight [years]: ', best_decision_variables[3]/365)
-print("Jupiter fly-by date:")
+print('Earth-Earth time of flight [years]: ', best_decision_variables[3]/365)
+print("Earth fly-by date:")
 print(julian_day_to_calendar_date(constants.JULIAN_DAY_ON_J2000+sum(best_decision_variables[0:4])))
-print('Jupiter-Neptune time of flight [years]: ', best_decision_variables[4]/365)
-print("Neptune arrival date:")
+print('Earth-Jupiter time of flight [years]: ', best_decision_variables[4]/365)
+print("Jupiter fly-by date:")
 print(julian_day_to_calendar_date(constants.JULIAN_DAY_ON_J2000+sum(best_decision_variables[0:5])))
+print('Jupiter-Neptune time of flight [years]: ', best_decision_variables[5]/365)
+print("Neptune arrival date:")
+print(julian_day_to_calendar_date(constants.JULIAN_DAY_ON_J2000+sum(best_decision_variables[0:6])))
 print("\nTotal time of flight [years]: ", sum(best_decision_variables[1:])/365)
 
 # Plot fitness over generations

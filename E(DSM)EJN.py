@@ -36,7 +36,7 @@ from tudatpy.trajectory_design import transfer_trajectory
 from tudatpy import constants
 from tudatpy.numerical_simulation import environment_setup
 from tudatpy.util import result2array
-from tudatpy.astro.time_conversion import DateTime
+from tudatpy.astro.time_conversion import DateTime, julian_day_to_calendar_date
 
 # Pygmo imports
 import pygmo as pg
@@ -257,7 +257,7 @@ transfer_node_settings.append( transfer_trajectory.departure_node(departure_semi
 
 # Intermediate nodes: swingby_node
 transfer_node_settings.append( transfer_trajectory.swingby_node(6678000.0) )
-transfer_node_settings.append( transfer_trajectory.swingby_node(600000000.0) )
+transfer_node_settings.append( transfer_trajectory.swingby_node(600e6) )
 
 # Final node: capture_node
 transfer_node_settings.append( transfer_trajectory.capture_node(arrival_semi_major_axis, arrival_eccentricity) )
@@ -288,16 +288,16 @@ legs_tof_lb[0] = 500 * constants.JULIAN_DAY
 legs_tof_ub[0] = 1000 * constants.JULIAN_DAY
 # Jupiter fly-by
 legs_tof_lb[1] = 600 * constants.JULIAN_DAY
-legs_tof_ub[1] = 1800 * constants.JULIAN_DAY
+legs_tof_ub[1] = 1300 * constants.JULIAN_DAY
 # Neptune fly-by
-legs_tof_lb[2] = 4000 * constants.JULIAN_DAY
-legs_tof_ub[2] = 6000 * constants.JULIAN_DAY
+legs_tof_lb[2] = 3000 * constants.JULIAN_DAY
+legs_tof_ub[2] = 4500 * constants.JULIAN_DAY
 
-dsm_leg_fraction_lb = 0.1
-dsm_leg_fraction_ub = 0.9
+dsm_leg_fraction_lb = 0.4
+dsm_leg_fraction_ub = 0.6
 
-v_inf_lb = [3300, 0, 0]
-v_inf_ub = [5500, np.pi/3, np.pi]
+v_inf_lb = [5000, 0, 0]
+v_inf_ub = [5500, 0.15, np.pi]
 
 # To setup the optimization, it is first necessary to initialize the optimization problem. This problem, defined through the class `TransferTrajectoryProblem`, is given to PyGMO trough the `pg.problem()` method.
 # 
@@ -392,8 +392,14 @@ print('Total Delta V [m/s]: ', pop.champion_f[0])
 best_decision_variables = pop.champion_x
 best_decision_variables[:4] = best_decision_variables[:4] /constants.JULIAN_DAY
 print('Departure time w.r.t J2000 [years]: ', best_decision_variables[0]/365)
-print('Earth-Ea time of flight [years]: ', best_decision_variables[1]/365)
-print('Venus-Earth time of flight [years]: ', best_decision_variables[2]/365)
+print("Departure date:")
+print(julian_day_to_calendar_date(constants.JULIAN_DAY_ON_J2000+best_decision_variables[0]))
+print('Earth-Earth time of flight [years]: ', best_decision_variables[1]/365)
+print("Fly-by date at Earth:")
+print(julian_day_to_calendar_date(constants.JULIAN_DAY_ON_J2000+sum(best_decision_variables[0:2])))
+print('Earth-Jupiter time of flight [years]: ', best_decision_variables[2]/365)
+print("Fly-by date at Jupiter:")
+print(julian_day_to_calendar_date(constants.JULIAN_DAY_ON_J2000+sum(best_decision_variables[0:3])))
 print('Earth-Earth time of flight [years]: ', best_decision_variables[3]/365)
 print("\nTotal time of flight [years]: ", sum(best_decision_variables[1:4])/365)
 print("DSM leg fraction: ", best_decision_variables[4])

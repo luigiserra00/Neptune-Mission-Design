@@ -36,7 +36,7 @@ from tudatpy.trajectory_design import transfer_trajectory
 from tudatpy import constants
 from tudatpy.numerical_simulation import environment_setup
 from tudatpy.util import result2array
-from tudatpy.astro.time_conversion import DateTime
+from tudatpy.astro.time_conversion import *
 
 # Pygmo imports
 import pygmo as pg
@@ -61,7 +61,7 @@ def convert_trajectory_parameters (transfer_trajectory_object: tudatpy.kernel.tr
 
     # Extract from trajectory parameters the lists with each type of parameters
     departure_time = trajectory_parameters[0]
-    times_of_flight_per_leg = trajectory_parameters[1:]
+    times_of_flight_per_leg = trajectory_parameters[1:6]
 
     # Get node times
     # Node time for the intial node: departure time
@@ -153,7 +153,7 @@ class TransferTrajectoryProblem:
         transfer_trajectory_obj = self.transfer_trajectory_function()
 
         # Get number of parameters: it's the number of nodes (time at the first node, and time of flight to reach each subsequent node)
-        number_of_parameters = transfer_trajectory_obj.number_of_nodes
+        number_of_parameters = transfer_trajectory_obj.number_of_nodes + 3
 
         return number_of_parameters
 
@@ -217,11 +217,29 @@ arrival_semi_major_axis = arrival_radius_of_periapsis/arrival_eccentricity
 # Create simplified system of bodies
 bodies = environment_setup.create_simplified_system_of_bodies()
 
-# Define the trajectory settings for both the legs and at the nodes
-transfer_leg_settings, transfer_node_settings = transfer_trajectory.mga_settings_unpowered_unperturbed_legs(
-    transfer_body_order,
-    departure_orbit=(departure_semi_major_axis, departure_eccentricity),
-    arrival_orbit=(arrival_semi_major_axis, arrival_eccentricity))
+# Manually create the legs settings
+
+# First create an empty list and then append to that the settings of each transfer leg
+transfer_leg_settings = list()
+for i in range(len(transfer_body_order) - 1):
+    transfer_leg_settings.append( transfer_trajectory.unpowered_leg() )
+
+# Manually create the nodes settings
+
+# First create an empty list and then append to that the settings of each transfer node
+transfer_node_settings = []
+
+# Initial node: departure_node
+transfer_node_settings.append( transfer_trajectory.departure_node(departure_semi_major_axis, departure_eccentricity) )
+
+# Intermediate nodes: swingby_node
+transfer_node_settings.append( transfer_trajectory.swingby_node(6351800.0) )
+transfer_node_settings.append( transfer_trajectory.swingby_node(6678000.0) )
+transfer_node_settings.append( transfer_trajectory.swingby_node(6678000.0) )
+transfer_node_settings.append( transfer_trajectory.swingby_node(600000000.0) )
+
+# Final node: capture_node
+transfer_node_settings.append( transfer_trajectory.capture_node(arrival_semi_major_axis, arrival_eccentricity) )
 
 # Create the transfer calculation object
 transfer_trajectory_object = transfer_trajectory.create_transfer_trajectory(
@@ -230,6 +248,10 @@ transfer_trajectory_object = transfer_trajectory.create_transfer_trajectory(
     transfer_node_settings,
     transfer_body_order,
     central_body)
+
+# Print transfer parameter definitions
+print("Transfer parameter definitions:")
+transfer_trajectory.print_parameter_definitions(transfer_leg_settings, transfer_node_settings)
 
 ## Optimization
 """
@@ -249,7 +271,7 @@ departure_date_ub = DateTime(2055,  1,  1).epoch()
 legs_tof_lb = np.zeros(5)
 legs_tof_ub = np.zeros(5)
 # Venus first fly-by
-legs_tof_lb[0] = 100 * constants.JULIAN_DAY
+legs_tof_lb[0] = 50 * constants.JULIAN_DAY
 legs_tof_ub[0] = 400 * constants.JULIAN_DAY
 # Earth fly-by
 legs_tof_lb[1] = 100 * constants.JULIAN_DAY
@@ -261,8 +283,8 @@ legs_tof_ub[2] = 800 * constants.JULIAN_DAY
 legs_tof_lb[3] = 600 * constants.JULIAN_DAY
 legs_tof_ub[3] = 1800 * constants.JULIAN_DAY
 # Neptune fly-by
-legs_tof_lb[4] = 4000 * constants.JULIAN_DAY
-legs_tof_ub[4] = 5000 * constants.JULIAN_DAY
+legs_tof_lb[4] = 3000 * constants.JULIAN_DAY
+legs_tof_ub[4] = 4000 * constants.JULIAN_DAY
 
 # To setup the optimization, it is first necessary to initialize the optimization problem. This problem, defined through the class `TransferTrajectoryProblem`, is given to PyGMO trough the `pg.problem()` method.
 # 
@@ -354,11 +376,23 @@ print('\n########### CHAMPION INDIVIDUAL ###########\n')
 print('Total Delta V [m/s]: ', pop.champion_f[0])
 best_decision_variables = pop.champion_x/constants.JULIAN_DAY
 print('Departure time w.r.t J2000 [years]: ', best_decision_variables[0]/365)
+print("Departure date:")
+print(julian_day_to_calendar_date(constants.JULIAN_DAY_ON_J2000+best_decision_variables[0]))
 print('Earth-Venus time of flight [years]: ', best_decision_variables[1]/365)
+print("Flyby at Venus: ")
+print(julian_day_to_calendar_date(constants.JULIAN_DAY_ON_J2000+sum(best_decision_variables[0:2])))
 print('Venus-Earth time of flight [years]: ', best_decision_variables[2]/365)
+print("Flyby at Earth: ")
+print(julian_day_to_calendar_date(constants.JULIAN_DAY_ON_J2000+sum(best_decision_variables[0:3])))
 print('Earth-Earth time of flight [years]: ', best_decision_variables[3]/365)
+print("Flyby at Earth: ")
+print(julian_day_to_calendar_date(constants.JULIAN_DAY_ON_J2000+sum(best_decision_variables[0:4])))
 print('Earth-Jupiter time of flight [years]: ', best_decision_variables[4]/365)
+print("Flyby at Jupiter: ")
+print(julian_day_to_calendar_date(constants.JULIAN_DAY_ON_J2000+sum(best_decision_variables[0:5])))
 print('Jupiter-Neptune time of flight [years]: ', best_decision_variables[5]/365)
+print("Arrival at Neptune: ")
+print(julian_day_to_calendar_date(constants.JULIAN_DAY_ON_J2000+sum(best_decision_variables[0:6])))
 print("\nTotal time of flight [years]: ", sum(best_decision_variables[1:])/365)
 
 # Plot fitness over generations
@@ -407,8 +441,25 @@ ax.scatter(fly_by_states[1, 0] / au, fly_by_states[1, 1] / au, color='green', la
 ax.scatter(fly_by_states[2, 0] / au, fly_by_states[2, 1] / au, color='green', label='Earth fly-by')
 ax.scatter(fly_by_states[3, 0] / au, fly_by_states[3, 1] / au, color='brown', label='Earth fly-by')
 ax.scatter(fly_by_states[4, 0] / au, fly_by_states[4, 1] / au, color='red', label='Jupiter fly-by')
-ax.scatter(fly_by_states[5, 0] / au, fly_by_states[5, 1] / au, color='grey', label='Saturn arrival')
+ax.scatter(fly_by_states[5, 0] / au, fly_by_states[5, 1] / au, color='grey', label='Neptune arrival')
 ax.scatter([0], [0], color='orange', label='Sun')
+ax.set_xlabel('x wrt Sun [AU]')
+ax.set_ylabel('y wrt Sun [AU]')
+ax.set_aspect('equal')
+ax.legend(bbox_to_anchor=[1, 1])
+plt.show()
+
+fig = plt.figure(figsize=(8,5))
+ax = fig.add_subplot(111, projection='3d')
+
+ax.plot(state_history[:, 1] / au, state_history[:, 2] / au, state_history[:, 3] / au)
+ax.scatter(fly_by_states[0, 0] / au, fly_by_states[0, 1] / au, fly_by_states[0, 2] / au, color='blue', label='Earth departure')
+ax.scatter(fly_by_states[1, 0] / au, fly_by_states[1, 1] / au, fly_by_states[1, 2] / au, color='green', label='Venus fly-by')
+ax.scatter(fly_by_states[2, 0] / au, fly_by_states[2, 1] / au, fly_by_states[2, 2] / au, color='green', label='Earth fly-by')
+ax.scatter(fly_by_states[3, 0] / au, fly_by_states[3, 1] / au, fly_by_states[3, 2] / au, color='brown', label='Earth fly-by')
+ax.scatter(fly_by_states[4, 0] / au, fly_by_states[4, 1] / au, fly_by_states[4, 2] / au, color='red', label='Jupiter fly-by')
+ax.scatter(fly_by_states[5, 0] / au, fly_by_states[5, 1] / au, fly_by_states[5, 2] / au, color='grey', label='Neptune arrival')
+ax.scatter([0], [0], [0], color='orange', label='Sun')  
 ax.set_xlabel('x wrt Sun [AU]')
 ax.set_ylabel('y wrt Sun [AU]')
 ax.set_aspect('equal')
