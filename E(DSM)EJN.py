@@ -40,6 +40,7 @@ from tudatpy.astro.time_conversion import DateTime, julian_day_to_calendar_date
 
 # Pygmo imports
 import pygmo as pg
+import pickle
 
 ## Helpers
 """
@@ -369,15 +370,15 @@ for i in range(number_of_evolutions):
     individuals_list.append(pop.champion_x)
     fitness_list.append(pop.champion_f)
 
+pickle.dump([pop.champion_f[0], pop.champion_x], open("best.pkl", "wb"))
+
 print('The optimization has finished')
 
 ## Results Analysis
 """
 Having finished the optimisation, it is now possible to analyse the results.
 
-According to [Vinkó et al (2007)](https://www.esa.int/gsp/ACT/doc/MAD/pub/ACT-RPR-MAD-2007-BenchmarkingDifferentGlobalOptimisationTechniques.pdf), the best known solution for the Cassini 1 problem has a final objective function value of 4.93 km/s.
-
-The executed optimization process results in a final objective function value of 4933.17 m/s, with a slightly different decision vector from the one presented by Vinkó et al. (2017). This marginal difference can be explained by an inperfect convergence of the used optimizer, which is expected, considering that DE is a global optimizer. 
+According to [Vinkó et al (2007)](https://www.esa.int/gsp/ACT/doc/MAD/pub/ACT-RPR-MAD-2007-BenchmarkingDifferentGlobalOptimisationTechniques.pdf), the best known solution for the Cassini 1 problem hasax.plot(state_history[:,0], np.linalg.norm(state_history[:, 4:], axis=1), color='blue', label='$V_x$[m/s]')al objective function value of 4933.17 m/s, with a slightly different decision vector from the one presented by Vinkó et al. (2017). This marginal difference can be explained by an inperfect convergence of the used optimizer, which is expected, considering that DE is a global optimizer. 
 
 The evolution of the minimum $\Delta V$ throughout the optimization process can be plotted.
 """
@@ -408,7 +409,7 @@ print("V_inf in-plane angle [rad]: ", best_decision_variables[6])
 print("V_inf out-of-plane angle [rad]: ", best_decision_variables[7])
 
 # Plot fitness over generations
-fig, ax = plt.subplots(figsize=(8, 4))
+fig, ax = plt.subplots(num=100,figsize=(8, 4))
 ax.plot(np.arange(0, number_of_evolutions), np.float_(fitness_list) / 1000, label='Function value: Feval')
 # Plot champion
 champion_n = np.argmin(np.array(fitness_list))
@@ -426,35 +427,4 @@ plt.tight_layout()
 plt.legend()
 
 
-### Plot the transfer
-"""
-Finally, the position history throughout the transfer can be retrieved from the transfer trajectory object and plotted.
-"""
 
-# Reevaluate the transfer trajectory using the champion design variables
-node_times, leg_free_parameters, node_free_parameters = convert_trajectory_parameters(transfer_trajectory_object, pop.champion_x)
-transfer_trajectory_object.evaluate(node_times, leg_free_parameters, node_free_parameters)
-
-# Extract the state history
-state_history = transfer_trajectory_object.states_along_trajectory(500)
-fly_by_states = np.array([state_history[node_times[i]] for i in range(len(node_times))])
-state_history = result2array(state_history)
-au = 1.5e11
-
-print(transfer_trajectory_object.delta_v_per_node)
-print(transfer_trajectory_object.delta_v_per_leg)
-
-# Plot the state history
-fig = plt.figure(figsize=(8,5))
-ax = fig.add_subplot(111)
-ax.plot(state_history[:, 1] / au, state_history[:, 2] / au)
-ax.scatter(fly_by_states[0, 0] / au, fly_by_states[0, 1] / au, color='blue', label='Earth departure')
-ax.scatter(fly_by_states[1, 0] / au, fly_by_states[1, 1] / au, color='green', label='Venus fly-by')
-ax.scatter(fly_by_states[2, 0] / au, fly_by_states[2, 1] / au, color='green')
-ax.scatter(fly_by_states[3, 0] / au, fly_by_states[3, 1] / au, color='brown', label='Earth fly-by')
-ax.scatter([0], [0], color='orange', label='Sun')
-ax.set_xlabel('x wrt Sun [AU]')
-ax.set_ylabel('y wrt Sun [AU]')
-ax.set_aspect('equal')
-ax.legend(bbox_to_anchor=[1, 1])
-plt.show()
