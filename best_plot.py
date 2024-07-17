@@ -1,6 +1,5 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.animation import FuncAnimation
 import pickle
 
 from typing import List, Tuple
@@ -13,21 +12,24 @@ from tudatpy import constants
 from tudatpy.astro.frame_conversion import inertial_to_body_fixed_rotation_matrix
 from tudatpy.interface.spice import get_body_cartesian_state_at_epoch
 from tudatpy.interface import spice_interface
+from tudatpy.astro.time_conversion import DateTime, julian_day_to_calendar_date
+from matplotlib.animation import FuncAnimation, FFMpegWriter
 
-bodies_to_create = ["Sun", "Earth", "Jupiter","Neptune"]
-global_frame_origin = "SSB"
-global_frame_orientation = "ECLIPJ2000"
+bodies = environment_setup.create_simplified_system_of_bodies()
 
-# Create the bodies
-spice_interface.load_standard_kernels()
-spice_interface.load_kernel("c:/Users/TeamRed/.tudat/resource/spice_kernels/de440.bsp")
-bodies_settings = environment_setup.get_default_body_settings(bodies_to_create, global_frame_origin, global_frame_orientation)
-bodies = environment_setup.create_system_of_bodies(bodies_settings)
+plt.rcParams.update({'font.size': 14})
                                                    
 ### Plot the transfer
 """
 Finally, the position history throughout the transfer can be retrieved from the transfer trajectory object and plotted.
 """
+
+def find_closest_index(arr, target_value):
+    # Calculate the absolute difference between each array element and the target value
+    differences = np.abs(arr - target_value)
+    # Find the index of the smallest difference
+    closest_index = np.argmin(differences)
+    return closest_index
 
 def convert_trajectory_parameters (transfer_trajectory_object: tudatpy.kernel.trajectory_design.transfer_trajectory.TransferTrajectory,
                                    trajectory_parameters: List[float]
@@ -125,7 +127,7 @@ transfer_trajectory_object = transfer_trajectory.create_transfer_trajectory(
     central_body)
 
 
-minimuim_dv, best_individual = pickle.load(open("best.pkl", "rb"))
+minimum_dv, best_individual = pickle.load(open("best.pkl", "rb"))
 
 # Reevaluate the transfer trajectory using the champion design variables
 node_times, leg_free_parameters, node_free_parameters = convert_trajectory_parameters(transfer_trajectory_object, best_individual)
@@ -137,20 +139,22 @@ fly_by_states = np.array([state_history[node_times[i]] for i in range(len(node_t
 state_history = result2array(state_history)
 au = 1.5e11
 
-print(transfer_trajectory_object.delta_v_per_node)
-print(transfer_trajectory_object.delta_v_per_leg)
+dsm_fraction = best_individual[4]
+dsm_time = node_times[0] + dsm_fraction * (node_times[1] - node_times[0])
+dsm_idx = find_closest_index(state_history[:,0], dsm_time)
 
 # Plot the state history
 fig = plt.figure(num = 1, figsize=(8,5))
 ax = fig.add_subplot(111)
-ax.plot(state_history[:, 1] / au, state_history[:, 2] / au)
-ax.scatter(fly_by_states[0, 0] / au, fly_by_states[0, 1] / au, color='blue', label='Earth departure')
-ax.scatter(fly_by_states[1, 0] / au, fly_by_states[1, 1] / au, color='green', label='Earth fly-by')
-ax.scatter(fly_by_states[2, 0] / au, fly_by_states[2, 1] / au, color='green', label = "Jupiter fly-by")
-ax.scatter(fly_by_states[3, 0] / au, fly_by_states[3, 1] / au, color='brown', label='Neptune arrival')
+ax.plot(state_history[:, 2] / au, state_history[:, 1] / au)
+ax.scatter(fly_by_states[0, 1] / au, fly_by_states[0, 0] / au, color='blue', label='Earth departure')
+ax.scatter(fly_by_states[1, 1] / au, fly_by_states[1, 0] / au, color='green', label='Earth fly-by')
+ax.scatter(fly_by_states[2, 1] / au, fly_by_states[2, 0] / au, color='green', label = "Jupiter fly-by")
+ax.scatter(fly_by_states[3, 1] / au, fly_by_states[3, 0] / au, color='brown', label='Neptune arrival')
+ax.scatter(state_history[dsm_idx, 2] / au, state_history[dsm_idx,1] / au, color='red', label='DSM', marker="x")
 ax.scatter([0], [0], color='orange', label='Sun')
-ax.set_xlabel('x wrt Sun [AU]')
-ax.set_ylabel('y wrt Sun [AU]')
+ax.set_ylabel('x wrt Sun [AU]')
+ax.set_xlabel('y wrt Sun [AU]')
 ax.set_aspect('equal')
 ax.grid()
 ax.legend(bbox_to_anchor=[1, 1])
@@ -200,44 +204,68 @@ ax.set_xlabel('Time [days]')
 ax.set_ylabel('Declination [deg]')
 plt.show()
 
+time = state_history[:,0]
+orbit_Earth = np.zeros((len(time), 6))
+orbit_Jupiter = np.zeros((len(time), 6))
+orbit_Neptune = np.zeros((len(time), 6))
+
+for i, t in enumerate(time):
+    orbit_Earth[i,:] = bodies.get_body("Earth").state_in_base_frame_from_ephemeris(t)/au
+    orbit_Jupiter[i,:] = bodies.get_body("Jupiter").state_in_base_frame_from_ephemeris(t)/au
+    orbit_Neptune[i,:] = bodies.get_body("Neptune").state_in_base_frame_from_ephemeris(t)/au
+
 fig, ax = plt.subplots(num = 5, figsize=(8, 5))
 fig.patch.set_facecolor('black')  # Set the figure background to black
 ax.set_facecolor('black')  # Set the axes background to black
 
-line, = ax.plot([], [], lw=2, color='white')  # Initialize an empty line for the trajectory with a contrasting color
+line, = ax.plot([], [], lw=1, color='magenta')  # Initialize an empty line for the trajectory with a contrasting color
+line_Earth, = ax.plot([], [], lw=1, color='cyan')  # Initialize an empty line for the trajectory with a contrasting color
+line_Jupiter, = ax.plot([], [], lw=1, color='lime')  # Initialize an empty line for the trajectory with a contrasting color
+line_Neptune, = ax.plot([], [], lw=1, color='coral')  # Initialize an empty line for the trajectory with a contrasting color
+spacecraft_scatter = ax.scatter([], [], s=7, color="magenta", label = "Nostromo")
+Earth_scatter = ax.scatter([], [], s=7, color="cyan", label = "Earth")
+Jupiter_scatter = ax.scatter([], [], s=7, color="lime", label = "Jupiter")
+Neptune_scatter = ax.scatter([], [], s=7, color="coral", label = "Neptune")
+date_text = ax.text(0.55, 0.01, '', transform=ax.transAxes, color="white", fontsize=10)  # Posiziona il testo nell'angolo in alto a sinistra
+vel_text = ax.text(0.15, 0.01, '', transform=ax.transAxes, color="white", fontsize=10)  # Posiziona il testo nell'angolo in alto a sinistra
 
 # Setting up the plot limits, labels, and changing label colors to white
 ax.set_xlim([-8,8])
 ax.set_ylim([-8,8])
-ax.set_xlabel('x wrt Sun [AU]', color='white')
-ax.set_ylabel('y wrt Sun [AU]', color='white')
-ax.tick_params(axis='x', colors='white')  # Change x-axis tick colors to white
-ax.tick_params(axis='y', colors='white')  # Change y-axis tick colors to white
+#ax.set_xlabel('x wrt Sun [AU]', color='white')
+#ax.set_ylabel('y wrt Sun [AU]', color='white')
+#ax.tick_params(axis='x', colors='white')  # Change x-axis tick colors to white
+#ax.tick_params(axis='y', colors='white')  # Change y-axis tick colors to white
 ax.scatter([0], [0], color='yellow', label='Sun')  # Sun position with a bright color
 ax.set_aspect('equal')
+ax.text(0.4, 1.1, "Nostromo", transform=ax.transAxes, color = "white", fontsize=10)
 
-planet_names = ['Earth', 'Jupiter_Barycenter', 'Neptune_Barycenter']
-planet_colors = ['blue', 'orange', 'cyan']  # Example colors for Earth, Jupiter, and Neptune
-
-# Initialize scatter plots for planets
-planet_scatters = [ax.scatter([], [], color=color, label=name) for name, color in zip(planet_names, planet_colors)]
-
-def update_planet_positions(ephemeris_time):
-    positions = []
-    for name in planet_names:
-        position = get_body_cartesian_state_at_epoch(name, 'Sun', 'ECLIPJ2000', "None", ephemeris_time)
-        positions.append(position[:2])  # Assuming the function returns [x, y, z] and we only need [x, y]
-    return positions
+planet_names = ['Earth', 'Jupiter', 'Neptune']
+planet_colors = ['cyan', 'lime', 'coral']  # Example colors for Earth, Jupiter, and Neptune
 
 def init():
     line.set_data([], [])
-    for scatter in planet_scatters:
-        scatter.set_offsets(np.empty((0, 2)))  # Initialize with empty data
-    return [line, *planet_scatters]
+    line_Earth.set_data([], [])
+    line_Jupiter.set_data([], [])
+    line_Neptune.set_data([], [])
+    spacecraft_scatter.set_offsets(np.empty((0, 2)))  # Initialize with empty data
+    Earth_scatter.set_offsets(np.empty((0, 2)))  # Initialize with empty data
+    Jupiter_scatter.set_offsets(np.empty((0, 2)))  # Initialize with empty data
+    Neptune_scatter.set_offsets(np.empty((0, 2)))  # Initialize with empty data
+    date_text.set_text('')
+    vel_text.set_text('')
+    return [line, line_Earth, line_Jupiter, line_Neptune, spacecraft_scatter, Earth_scatter, Jupiter_scatter, Neptune_scatter, date_text, vel_text]
 
 def animate(i):
     line.set_data(state_history[:i, 1] / au, state_history[:i, 2] / au)
+    line_Earth.set_data(orbit_Earth[:i, 0], orbit_Earth[:i, 1])
+    line_Jupiter.set_data(orbit_Jupiter[:i, 0], orbit_Jupiter[:i, 1])
+    line_Neptune.set_data(orbit_Neptune[:i, 0], orbit_Neptune[:i, 1])
 
+    date = julian_day_to_calendar_date(constants.JULIAN_DAY_ON_J2000 + state_history[i, 0]/constants.JULIAN_DAY)
+    date_string = str(date.year) + '-' + str(date.month) + '-' + str(date.day) 
+    date_text.set_text(date_string) 
+    vel_text.set_text(f'Velocity: {np.linalg.norm(state_history[i, 4:])/1000:.2f} km/s')
     if i == 0:
         # Set a default zoom level for the first frame
         current_max = 8
@@ -246,26 +274,21 @@ def animate(i):
         current_max_y = np.max(np.abs(state_history[:i, 2] / au))
         current_max = max(current_max_x, current_max_y) + 5
 
-    if current_max < 12:
-        ax.set_xlim([-8,8])
-        ax.set_ylim([-8,8])
-    else:
-        ax.set_xlim([-current_max, current_max])
-        ax.set_ylim([-current_max, current_max])
+    ax.set_xlim([-current_max, current_max])
+    ax.set_ylim([-current_max, current_max])
 
     # Update planet positions based on the current ephemeris time
     current_ephemeris_time = state_history[i, 0]
-    planet_positions = update_planet_positions(current_ephemeris_time)
-    for scatter, position in zip(planet_scatters, planet_positions):
-        scatter.set_offsets([position])  # Update each planet's position
+    spacecraft_scatter.set_offsets([state_history[i, 1] / au, state_history[i, 2] / au])
+    Earth_scatter.set_offsets([bodies.get_body("Earth").state_in_base_frame_from_ephemeris(current_ephemeris_time)[:2]/au])
+    Jupiter_scatter.set_offsets([bodies.get_body("Jupiter").state_in_base_frame_from_ephemeris(current_ephemeris_time)[:2]/au])
+    Neptune_scatter.set_offsets([bodies.get_body("Neptune").state_in_base_frame_from_ephemeris(current_ephemeris_time)[:2]/au])
 
-    # Zoom and limits logic remains unchanged
-    # ...
-
-    return [line, *planet_scatters]
-
+    return [line, line_Earth, line_Jupiter, line_Neptune, spacecraft_scatter, Earth_scatter, Jupiter_scatter, Neptune_scatter, date_text, vel_text]
 # Creating the animation
-ani = FuncAnimation(fig, animate, frames=len(state_history[:, 0]), init_func=init, blit=True, interval=20)
-
-#ax.legend(bbox_to_anchor=[1, 1])
+ani = FuncAnimation(fig, animate, frames=len(state_history[:, 0]), init_func=init, blit=True, interval=8)
+writer = FFMpegWriter(fps=24)
+legend = ax.legend(facecolor='black', edgecolor='none',bbox_to_anchor=(1.5,0.01),ncol = 5)
+plt.setp(legend.get_texts(), color='white')
+ani.save('nostromo.mp4', writer=writer)
 plt.show()
