@@ -10,6 +10,8 @@ from tudatpy.numerical_simulation import environment_setup
 from tudatpy.trajectory_design import transfer_trajectory
 from tudatpy.astro.time_conversion import DateTime, julian_day_to_calendar_date
 
+plt.rcParams.update({'font.size': 18})
+
 def find_closest_index(arr, target_value):
     # Calculate the absolute difference between each array element and the target value
     differences = np.abs(arr - target_value)
@@ -54,50 +56,59 @@ def convert_trajectory_parameters (transfer_trajectory_object: tudatpy.kernel.tr
 
     return node_times, leg_free_parameters, node_free_parameters
 
-objective_list, individuals_list = pickle.load(open("E(DSM)EJN_montecarlo_results.pkl", "rb"))
+objective_list, individuals_list = pickle.load(open("E(DSM)EJN_montecarlo_results_launch.pkl", "rb"))
 
-departure_dates_list = list()
-tof_list = list()
-dv_list = list()
-c3_list = list()
+departure_dates_list = [[] for _ in range(3)]
+tof_list = [[] for _ in range(3)]
+dv_list = [[] for _ in range(3)]
+c3_list = [[] for _ in range(3)]
 
-for i, individual in enumerate(individuals_list):
-    
-    individual[:4] = individual[:4] / constants.JULIAN_DAY
-    departure_dates_list.append(julian_day_to_calendar_date(constants.JULIAN_DAY_ON_J2000+individual[0]))
-    tof_list.append(sum(individual[1:4])/365)
-    dv_list.append(objective_list[i] - individual[5])
-    c3_list.append(individual[5]**2)
+for j in range(3):
+    for i, individual in enumerate(individuals_list[j]):
+        
+        individual[:4] = individual[:4] / constants.JULIAN_DAY
+        departure_dates_list[j].append(julian_day_to_calendar_date(constants.JULIAN_DAY_ON_J2000+individual[0]))
+        tof_list[j].append(sum(individual[1:4])/365)
+        dv_list[j].append(objective_list[j][i] - individual[5])
+        c3_list[j].append(individual[5]**2)
 
 fig = plt.figure(figsize=(4,3))
 ax = fig.add_subplot(111)
 ax.grid()
 #ax.scatter(dv_list, tof_list, s =5, color = "blue")
-ax.set_xlabel( "Delta-V [km/s]")
-ax.set_ylabel( "Time of flight [years]")
+ax.set_ylabel( "Delta-V [m/s]")
+ax.set_xlabel( "Time of flight [years]")
 ax.set_title("Pareto front for Earth-Neptune transfer exploiting DSMs")
-cs = ax.scatter(tof_list,
-                dv_list,
-                s=100,
-                c="blue",
-                marker='.',
-                alpha=0.65)
 
-# Add the Pareto from itself in green
-tof_array = np.array(tof_list)
-dv_array = np.array(dv_list)
-optimum_mask = util.pareto_optimums(np.array([tof_array,dv_array]).T)
-ax.step(
-    sorted(tof_array[optimum_mask], reverse=True),
-    sorted(dv_array[optimum_mask], reverse=False),
-    color="blue",
-    linewidth=2,
-    alpha=0.75)
+color_vec = ["blue", "red", "green"]
+dates = ["10-02-2054","04-05-2054","01-04-2055"]
 
+for j in range(3):
+    date = (departure_dates_list[j][-1])
+    cs = ax.scatter(tof_list[j],
+                    dv_list[j],
+                    s=100,
+                    c=color_vec[j],
+                    marker='.',
+                    alpha=0.65, 
+                    label =  "Launch date: " + dates[j])
 
-fig = plt.figure(figsize=(4,3))
-ax = fig.add_subplot(111)
-ax.plot(departure_dates_list, dv_list, color = "blue")
+    # Add the Pareto from itself in green
+    tof_array = np.array(tof_list[j])
+    dv_array = np.array(dv_list[j])
+    optimum_mask = util.pareto_optimums(np.array([tof_array,dv_array]).T)
+    ax.step(
+        sorted(tof_array[optimum_mask], reverse=True),
+        sorted(dv_array[optimum_mask], reverse=False),
+        color="blue",
+        linewidth=1,
+        alpha=0.5)
+
+ax.legend()
+# color in light green the area between lower ylim and 3000 m/s. Xbound needs to be the one chosen automatically by matplotlib
+ax.fill_between([11,21], [3000, 3000], color='lightgreen', alpha=0.5)
+ax.set_ylim([1900, 8000])
+ax.set_xlim([11, 21])
 plt.show()
 
 arr = np.array(dv_list)  # Assuming dv_list is the array you're interested in

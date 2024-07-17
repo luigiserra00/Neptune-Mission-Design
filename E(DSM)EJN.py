@@ -278,8 +278,8 @@ transfer_trajectory.print_parameter_definitions(transfer_leg_settings, transfer_
 # Before executing the optimization, it is necessary to select the bounds for the optimized parameters (departure date and time of flight per transfer leg). These are selected according to the values in the Cassini 1 problem statement [(Vinkó et al, 2007)](https://www.esa.int/gsp/ACT/doc/MAD/pub/ACT-RPR-MAD-2007-BenchmarkingDifferentGlobalOptimisationTechniques.pdf).
 
 # Lower and upper bound on departure date
-departure_date_lb = DateTime(2045,  1,  1).epoch()
-departure_date_ub = DateTime(2055,  1,  1).epoch()
+departure_date_lb = DateTime(2054,  5,  8).epoch()
+departure_date_ub = DateTime(2054,  5,  15).epoch()
 
 # List of lower and upper on time of flight for each leg
 legs_tof_lb = np.zeros(5)
