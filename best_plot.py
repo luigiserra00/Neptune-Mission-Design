@@ -208,11 +208,13 @@ time = state_history[:,0]
 orbit_Earth = np.zeros((len(time), 6))
 orbit_Jupiter = np.zeros((len(time), 6))
 orbit_Neptune = np.zeros((len(time), 6))
+orbit_Saturn = np.zeros((len(time), 6))
 
 for i, t in enumerate(time):
     orbit_Earth[i,:] = bodies.get_body("Earth").state_in_base_frame_from_ephemeris(t)/au
     orbit_Jupiter[i,:] = bodies.get_body("Jupiter").state_in_base_frame_from_ephemeris(t)/au
     orbit_Neptune[i,:] = bodies.get_body("Neptune").state_in_base_frame_from_ephemeris(t)/au
+    orbit_Saturn[i,:] = bodies.get_body("Saturn").state_in_base_frame_from_ephemeris(t)/au
 
 fig, ax = plt.subplots(num = 5, figsize=(8, 5))
 fig.patch.set_facecolor('black')  # Set the figure background to black
@@ -222,10 +224,12 @@ line, = ax.plot([], [], lw=1, color='magenta')  # Initialize an empty line for t
 line_Earth, = ax.plot([], [], lw=1, color='cyan')  # Initialize an empty line for the trajectory with a contrasting color
 line_Jupiter, = ax.plot([], [], lw=1, color='lime')  # Initialize an empty line for the trajectory with a contrasting color
 line_Neptune, = ax.plot([], [], lw=1, color='coral')  # Initialize an empty line for the trajectory with a contrasting color
+line_Saturn, = ax.plot([], [], lw=1, color='red')  # Initialize an empty line for the trajectory with a contrasting color
 spacecraft_scatter = ax.scatter([], [], s=7, color="magenta", label = "Nostromo")
 Earth_scatter = ax.scatter([], [], s=7, color="cyan", label = "Earth")
 Jupiter_scatter = ax.scatter([], [], s=7, color="lime", label = "Jupiter")
 Neptune_scatter = ax.scatter([], [], s=7, color="coral", label = "Neptune")
+Saturn_scatter = ax.scatter([], [], s=7, color="red", label = "Saturn")
 date_text = ax.text(0.55, 0.01, '', transform=ax.transAxes, color="white", fontsize=10)  # Posiziona il testo nell'angolo in alto a sinistra
 vel_text = ax.text(0.15, 0.01, '', transform=ax.transAxes, color="white", fontsize=10)  # Posiziona il testo nell'angolo in alto a sinistra
 
@@ -240,8 +244,8 @@ ax.scatter([0], [0], color='yellow', label='Sun')  # Sun position with a bright 
 ax.set_aspect('equal')
 ax.text(0.4, 1.1, "Nostromo", transform=ax.transAxes, color = "white", fontsize=10)
 
-planet_names = ['Earth', 'Jupiter', 'Neptune']
-planet_colors = ['cyan', 'lime', 'coral']  # Example colors for Earth, Jupiter, and Neptune
+planet_names = ['Earth', 'Jupiter', "Saturn" 'Neptune']
+planet_colors = ['cyan', 'lime', "red", 'coral']  # Example colors for Earth, Jupiter, and Neptune
 
 def init():
     line.set_data([], [])
@@ -252,15 +256,17 @@ def init():
     Earth_scatter.set_offsets(np.empty((0, 2)))  # Initialize with empty data
     Jupiter_scatter.set_offsets(np.empty((0, 2)))  # Initialize with empty data
     Neptune_scatter.set_offsets(np.empty((0, 2)))  # Initialize with empty data
+    Saturn_scatter.set_offsets(np.empty((0, 2)))  # Initialize with empty data
     date_text.set_text('')
     vel_text.set_text('')
-    return [line, line_Earth, line_Jupiter, line_Neptune, spacecraft_scatter, Earth_scatter, Jupiter_scatter, Neptune_scatter, date_text, vel_text]
+    return [line, line_Earth, line_Jupiter, line_Neptune, spacecraft_scatter, Earth_scatter, Jupiter_scatter, Neptune_scatter, Saturn_scatter, date_text, vel_text]
 
 def animate(i):
     line.set_data(state_history[:i, 1] / au, state_history[:i, 2] / au)
     line_Earth.set_data(orbit_Earth[:i, 0], orbit_Earth[:i, 1])
     line_Jupiter.set_data(orbit_Jupiter[:i, 0], orbit_Jupiter[:i, 1])
     line_Neptune.set_data(orbit_Neptune[:i, 0], orbit_Neptune[:i, 1])
+    line_Saturn.set_data(orbit_Saturn[:i, 0], orbit_Saturn[:i, 1])
 
     date = julian_day_to_calendar_date(constants.JULIAN_DAY_ON_J2000 + state_history[i, 0]/constants.JULIAN_DAY)
     date_string = str(date.year) + '-' + str(date.month) + '-' + str(date.day) 
@@ -283,12 +289,13 @@ def animate(i):
     Earth_scatter.set_offsets([bodies.get_body("Earth").state_in_base_frame_from_ephemeris(current_ephemeris_time)[:2]/au])
     Jupiter_scatter.set_offsets([bodies.get_body("Jupiter").state_in_base_frame_from_ephemeris(current_ephemeris_time)[:2]/au])
     Neptune_scatter.set_offsets([bodies.get_body("Neptune").state_in_base_frame_from_ephemeris(current_ephemeris_time)[:2]/au])
+    Saturn_scatter.set_offsets([bodies.get_body("Saturn").state_in_base_frame_from_ephemeris(current_ephemeris_time)[:2]/au])
 
-    return [line, line_Earth, line_Jupiter, line_Neptune, spacecraft_scatter, Earth_scatter, Jupiter_scatter, Neptune_scatter, date_text, vel_text]
+    return [line, line_Earth, line_Jupiter, line_Neptune, spacecraft_scatter, Earth_scatter, Jupiter_scatter, Neptune_scatter, Saturn_scatter, date_text, vel_text]
 # Creating the animation
 ani = FuncAnimation(fig, animate, frames=len(state_history[:, 0]), init_func=init, blit=True, interval=8)
 writer = FFMpegWriter(fps=24)
 legend = ax.legend(facecolor='black', edgecolor='none',bbox_to_anchor=(1.5,0.01),ncol = 5)
 plt.setp(legend.get_texts(), color='white')
-ani.save('nostromo.mp4', writer=writer)
+#ani.save('nostromo.mp4', writer=writer)
 plt.show()
